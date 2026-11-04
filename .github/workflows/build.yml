@@ -1,0 +1,473 @@
+name: APK Derle
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.5
+      - name: Proje dosyalarini olustur
+        run: |
+          mkdir -p "$(dirname settings.gradle.kts)"
+          cat > settings.gradle.kts <<'EOF_FILE'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "ImeiSorgulama"
+          include(":app")
+          EOF_FILE
+          mkdir -p "$(dirname build.gradle.kts)"
+          cat > build.gradle.kts <<'EOF_FILE'
+          plugins {
+              id("com.android.application") version "8.2.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+          }
+          EOF_FILE
+          mkdir -p "$(dirname gradle.properties)"
+          cat > gradle.properties <<'EOF_FILE'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          EOF_FILE
+          mkdir -p "$(dirname app/build.gradle.kts)"
+          cat > app/build.gradle.kts <<'EOF_FILE'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.imeisorgulama.app"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.imeisorgulama.app"
+                  minSdk = 24
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                      proguardFiles(
+                          getDefaultProguardFile("proguard-android-optimize.txt"),
+                          "proguard-rules.pro"
+                      )
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.12.0")
+              implementation("androidx.appcompat:appcompat:1.6.1")
+              implementation("com.google.android.material:material:1.11.0")
+              implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+              implementation("androidx.webkit:webkit:1.10.0")
+          }
+          EOF_FILE
+          mkdir -p "$(dirname app/proguard-rules.pro)"
+          cat > app/proguard-rules.pro <<'EOF_FILE'
+          # Keep WebView
+          EOF_FILE
+          mkdir -p "$(dirname app/src/main/AndroidManifest.xml)"
+          cat > app/src/main/AndroidManifest.xml <<'EOF_FILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@android:drawable/ic_dialog_info"
+                  android:label="@string/app_name"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.ImeiSorgulama"
+                  android:usesCleartextTraffic="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF_FILE
+          mkdir -p "$(dirname app/src/main/java/com/imeisorgulama/app/MainActivity.kt)"
+          cat > app/src/main/java/com/imeisorgulama/app/MainActivity.kt <<'EOF_FILE'
+          package com.imeisorgulama.app
+
+          import android.annotation.SuppressLint
+          import android.os.Bundle
+          import android.webkit.WebChromeClient
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+
+              private lateinit var webView: WebView
+
+              @SuppressLint("SetJavaScriptEnabled")
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  webView = findViewById(R.id.webView)
+                  webView.settings.javaScriptEnabled = true
+                  webView.settings.domStorageEnabled = true
+                  webView.settings.allowFileAccess = true
+
+                  webView.webViewClient = object : WebViewClient() {
+                      override fun shouldOverrideUrlLoading(
+                          view: WebView?,
+                          request: WebResourceRequest?
+                      ): Boolean {
+                          val url = request?.url?.toString() ?: return false
+                          // e-Devlet ve harici linkler sistem tarayicisinda acilsin
+                          if (url.startsWith("http://") || url.startsWith("https://")) {
+                              try {
+                                  startActivity(
+                                      android.content.Intent(
+                                          android.content.Intent.ACTION_VIEW,
+                                          android.net.Uri.parse(url)
+                                      )
+                                  )
+                              } catch (_: Exception) { }
+                              return true
+                          }
+                          return false
+                      }
+                  }
+                  webView.webChromeClient = WebChromeClient()
+
+                  webView.loadUrl("file:///android_asset/index.html")
+              }
+
+              override fun onBackPressed() {
+                  if (this::webView.isInitialized && webView.canGoBack()) {
+                      webView.goBack()
+                  } else {
+                      super.onBackPressed()
+                  }
+              }
+          }
+          EOF_FILE
+          mkdir -p "$(dirname app/src/main/res/layout/activity_main.xml)"
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF_FILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent">
+
+              <WebView
+                  android:id="@+id/webView"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent" />
+          </FrameLayout>
+          EOF_FILE
+          mkdir -p "$(dirname app/src/main/res/values/strings.xml)"
+          cat > app/src/main/res/values/strings.xml <<'EOF_FILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">IMEI Sorgulama</string>
+          </resources>
+          EOF_FILE
+          mkdir -p "$(dirname app/src/main/res/values/themes.xml)"
+          cat > app/src/main/res/values/themes.xml <<'EOF_FILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.ImeiSorgulama" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+                  <item name="colorPrimary">#1A5F9E</item>
+                  <item name="colorPrimaryVariant">#0D4A7A</item>
+                  <item name="colorOnPrimary">@android:color/white</item>
+                  <item name="android:statusBarColor">#1E5A8A</item>
+              </style>
+          </resources>
+          EOF_FILE
+          mkdir -p "$(dirname app/src/main/res/xml/network_security_config.xml)"
+          cat > app/src/main/res/xml/network_security_config.xml <<'EOF_FILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <base-config cleartextTrafficPermitted="true" />
+          </network-security-config>
+          EOF_FILE
+          mkdir -p app/src/main/assets
+          cat > app/src/main/assets/index.html <<'EOF_FILE'
+          <!DOCTYPE html>
+          <html lang="tr">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+            <meta name="color-scheme" content="light dark">
+            <title>IMEI Sorgulama</title>
+            <link rel="icon" href="data:,">
+            <style>
+              :root {
+                --primary: #1a5f9e;
+                --primary-dark: #0d4a7a;
+                --bg: #f0f2f5;
+                --card: #fff;
+                --border: #d0d7de;
+                --text: #24292f;
+                --muted: #57606a;
+                --success: #1a7f37;
+                --warning: #9a6700;
+                --danger: #cf222e;
+              }
+              :root[data-theme="dark"] {
+                --primary:#4c9be0; --primary-dark:#6aaeea; --bg:#0d1117; --card:#161b22; --border:#30363d;
+                --text:#e6edf3; --muted:#9aa4af; --success:#3fb950; --warning:#d29922; --danger:#f85149;
+              }
+              @media (prefers-color-scheme: dark) {
+                :root:not([data-theme="light"]) {
+                  --primary:#4c9be0; --primary-dark:#6aaeea; --bg:#0d1117; --card:#161b22; --border:#30363d;
+                  --text:#e6edf3; --muted:#9aa4af; --success:#3fb950; --warning:#d29922; --danger:#f85149;
+                }
+              }
+              :root { box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+                background: var(--bg);
+                color: var(--text);
+                min-height: 100vh;
+                line-height: 1.5;
+              }
+              .top {
+                background: #1e5a8a;
+                color: #fff;
+                padding: 14px 20px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                font-weight: 600;
+              }
+              .wrap {
+                max-width: 520px;
+                margin: 24px auto;
+                padding: 0 16px;
+              }
+              .card {
+                background: var(--card);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                padding: 22px;
+                box-shadow: 0 1px 3px rgba(0,0,0,.06);
+              }
+              h1 { font-size: 1.25rem; margin-bottom: 6px; }
+              .sub { color: var(--muted); font-size: .9rem; margin-bottom: 16px; }
+              .note {
+                background: color-mix(in srgb, var(--warning) 15%, var(--card));
+                border: 1px solid var(--warning);
+                border-radius: 8px;
+                padding: 12px 14px;
+                font-size: .88rem;
+                margin-bottom: 18px;
+              }
+              .note a { color: var(--primary); }
+              label { display: block; font-weight: 500; margin-bottom: 6px; font-size: .95rem; }
+              input[type="text"] {
+                width: 100%;
+                padding: 12px 14px;
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                font-size: 1.05rem;
+                letter-spacing: 1px;
+              }
+              input:focus {
+                outline: none;
+                border-color: var(--primary);
+                box-shadow: 0 0 0 3px rgba(26,95,158,.15);
+              }
+              .hint { font-size: .85rem; color: var(--muted); margin-top: 6px; }
+              .err { color: var(--danger); font-size: .88rem; margin-top: 8px; display: none; }
+              .actions { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+              .btn {
+                display: block;
+                width: 100%;
+                padding: 12px 16px;
+                border: none;
+                border-radius: 8px;
+                font-size: .95rem;
+                font-weight: 600;
+                cursor: pointer;
+                text-align: center;
+                text-decoration: none;
+              }
+              .btn-primary { background: var(--primary); color: #fff; }
+              .btn-primary:hover { background: var(--primary-dark); }
+              .btn-official { background: #1a7f37; color: #fff; }
+              .btn-official:hover { background: #15662c; }
+              .btn-secondary { background: color-mix(in srgb, var(--muted) 20%, var(--card)); color: var(--text); }
+              .result { display: none; margin-top: 18px; }
+              .result.show { display: block; }
+              table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+              th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+              th { width: 38%; color: var(--muted); font-weight: 500; background: color-mix(in srgb, var(--muted) 10%, var(--card)); }
+              .badge {
+                display: inline-block;
+                padding: 3px 10px;
+                border-radius: 20px;
+                font-weight: 600;
+                font-size: .85rem;
+              }
+              .badge.ok { background: color-mix(in srgb, var(--success) 20%, var(--card)); color: var(--success); }
+              .badge.warn { background: color-mix(in srgb, var(--warning) 20%, var(--card)); color: var(--warning); }
+              .badge.bad { background: color-mix(in srgb, var(--danger) 20%, var(--card)); color: var(--danger); }
+              .badge.info { background: color-mix(in srgb, var(--primary) 20%, var(--card)); color: var(--primary); }
+              footer {
+                text-align: center;
+                padding: 20px;
+                font-size: .8rem;
+                color: var(--muted);
+              }
+            </style>
+          </head>
+          <body>
+            <div class="top">🇹🇷 IMEI Sorgulama <span style="opacity:.75;font-weight:400;font-size:.85rem">· Chrome</span></div>
+
+            <div class="wrap">
+              <div class="card">
+                <h1>IMEI Kontrol</h1>
+                <p class="sub">15 haneli IMEI doğrulama · resmi sorgu e-Devlet’te</p>
+
+                <div class="note">
+                  Tarayıcıdan doğrudan BTK/e-Devlet veritabanına bağlanılmaz (CORS / güvenlik).
+                  Bu sayfa IMEI formatını kontrol eder. <strong>Gerçek kayıt durumu</strong> için resmi siteyi kullanın.
+                </div>
+
+                <label for="imei">IMEI No</label>
+                <input type="text" id="imei" maxlength="15" placeholder="15 haneli IMEI" inputmode="numeric" autocomplete="off">
+                <div class="hint">Telefonunuzda <strong>*#06#</strong> ile öğrenebilirsiniz.</div>
+                <div class="err" id="err"></div>
+
+                <div class="actions">
+                  <button class="btn btn-primary" id="checkBtn" type="button">Formatı Kontrol Et</button>
+                  <a class="btn btn-official" id="officialBtn" href="https://www.turkiye.gov.tr/imei-sorgulama" target="_blank" rel="noopener">
+                    e-Devlet’te Gerçek Sorgu Yap ↗
+                  </a>
+                </div>
+
+                <div class="result" id="result">
+                  <table>
+                    <tr><th>IMEI</th><td id="r-imei">—</td></tr>
+                    <tr><th>Uzunluk</th><td id="r-len">—</td></tr>
+                    <tr><th>Luhn kontrolü</th><td id="r-luhn">—</td></tr>
+                    <tr><th>Durum</th><td id="r-status">—</td></tr>
+                  </table>
+                  <p class="hint" style="margin-top:12px">
+                    Bu sonuç yalnızca numara geçerliliğidir; BTK kayıt durumu değildir.
+                  </p>
+                  <div class="actions" style="margin-top:12px">
+                    <a class="btn btn-official" href="https://www.turkiye.gov.tr/imei-sorgulama" target="_blank" rel="noopener">
+                      Resmi sitede bu IMEI’yi sorgula ↗
+                    </a>
+                    <button class="btn btn-secondary" type="button" id="resetBtn">Yeni kontrol</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <footer>
+              Resmi hizmet: <a href="https://www.turkiye.gov.tr/imei-sorgulama" target="_blank" rel="noopener">turkiye.gov.tr/imei-sorgulama</a>
+            </footer>
+
+            <script>
+              function luhnOk(imei) {
+                if (!/^\d{15}$/.test(imei)) return false;
+                let sum = 0;
+                for (let i = 0; i < 14; i++) {
+                  let d = parseInt(imei[i], 10);
+                  if (i % 2 === 1) {
+                    d *= 2;
+                    if (d > 9) d -= 9;
+                  }
+                  sum += d;
+                }
+                const check = (10 - (sum % 10)) % 10;
+                return check === parseInt(imei[14], 10);
+              }
+
+              const input = document.getElementById("imei");
+              const err = document.getElementById("err");
+              const result = document.getElementById("result");
+
+              input.addEventListener("input", () => {
+                input.value = input.value.replace(/\D/g, "").slice(0, 15);
+                err.style.display = "none";
+              });
+
+              document.getElementById("checkBtn").addEventListener("click", () => {
+                const imei = input.value.trim();
+                if (imei.length !== 15) {
+                  err.textContent = "15 haneli IMEI girin.";
+                  err.style.display = "block";
+                  result.classList.remove("show");
+                  return;
+                }
+                const ok = luhnOk(imei);
+                document.getElementById("r-imei").textContent = imei;
+                document.getElementById("r-len").textContent = "15 hane";
+                document.getElementById("r-luhn").innerHTML = ok
+                  ? '<span class="badge ok">Geçerli</span>'
+                  : '<span class="badge bad">Hatalı (Luhn)</span>';
+                document.getElementById("r-status").innerHTML = ok
+                  ? '<span class="badge info">Format uygun — kayıt için e-Devlet gerekli</span>'
+                  : '<span class="badge warn">Numara geçersiz görünüyor</span>';
+                result.classList.add("show");
+              });
+
+              document.getElementById("resetBtn").addEventListener("click", () => {
+                input.value = "";
+                result.classList.remove("show");
+                err.style.display = "none";
+                input.focus();
+              });
+
+              input.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") document.getElementById("checkBtn").click();
+              });
+            </script>
+          </body>
+          </html>
+          EOF_FILE
+
+      - name: Derle
+        run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imei-sorgulama-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
